@@ -140,13 +140,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     try:
         args = cast(_Arguments, parser.parse_args(argv))
-        with args.input.open(encoding="utf-8", newline="") as input_stream:
+        with args.input.open(encoding="utf-8") as input_stream:
             counts = read_counts(input_stream)
         clusters = collapse(counts, mode=args.mode, indexed=not args.naive)
         if args.output is None:
             write_clusters(sys.stdout, clusters, args.json)
         else:
-            with args.output.open("w", encoding="utf-8", newline="") as output_stream:
+            with args.output.open("w", encoding="utf-8") as output_stream:
                 write_clusters(output_stream, clusters, args.json)
     except CliExit as exc:
         if exc.message:

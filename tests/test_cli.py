@@ -37,6 +37,22 @@ def test_read_counts_rejects_empty_stream() -> None:
         read_counts(io.StringIO(""))
 
 
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ("", "input TSV is empty"),
+        ("UMI\tcount\nAAAA\t1\n", "TSV header must be exactly: umi<TAB>count"),
+        ("umi\tcount\n", "input TSV has no data rows"),
+        ("umi\tcount\nAAAA\n", "bad TSV row 2: expected two fields"),
+        ("umi\tcount\nAAAA\t1\nAAAT\n", "bad TSV row 3: expected two fields"),
+    ],
+)
+def test_read_counts_errors_include_exact_context(text: str, message: str) -> None:
+    with pytest.raises(ValueError) as caught:
+        read_counts(io.StringIO(text))
+    assert str(caught.value) == message
+
+
 def test_read_counts_normalizes_case() -> None:
     assert read_counts(io.StringIO("umi\tcount\naaaa\t2\n")) == {"AAAA": 2}
 
@@ -58,6 +74,19 @@ def test_writers() -> None:
             "members": ["AAAA", "AAAT"],
         }
     ]
+    assert stream.getvalue() == (
+        "[\n"
+        "  {\n"
+        '    "cluster": 1,\n'
+        '    "representative": "AAAA",\n'
+        '    "total": 3,\n'
+        '    "members": [\n'
+        '      "AAAA",\n'
+        '      "AAAT"\n'
+        "    ]\n"
+        "  }\n"
+        "]\n"
+    )
 
 
 def test_main_stdout_json_help_and_errors(
@@ -76,6 +105,31 @@ def test_main_stdout_json_help_and_errors(
     assert "error:" in capsys.readouterr().err
 
 
+def test_help_text_documents_cli_contract(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["--help"]) == 0
+    assert capsys.readouterr().out == (
+        "usage: umi-collapse [-h] [-o OUTPUT] [--mode {adjacency,directional}] "
+        "[--json]\n"
+        "                    [--naive]\n"
+        "                    input\n"
+        "\n"
+        "Command-line interface for UMI collapse.\n"
+        "\n"
+        "positional arguments:\n"
+        "  input                 TSV with umi and count columns\n"
+        "\n"
+        "options:\n"
+        "  -h, --help            show this help message and exit\n"
+        "  -o OUTPUT, --output OUTPUT\n"
+        "                        output path (default: stdout)\n"
+        "  --mode {adjacency,directional}\n"
+        "  --json                write JSON instead of TSV\n"
+        "  --naive               use all-pairs candidate generation "
+        "(adjacency mode\n"
+        "                        only)\n"
+    )
+
+
 def test_main_handles_parser_exit_message(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -88,12 +142,41 @@ def test_main_handles_parser_exit_message(
     assert capsys.readouterr().err == "custom exit\n"
 
 
+def test_cli_exit_retains_exception_message() -> None:
+    error = cli.CliExit(4, "requested exit")
+    assert str(error) == "requested exit"
+    assert error.status == 4
+    assert error.message == "requested exit"
+
+
+def test_parser_exit_preserves_message() -> None:
+    with pytest.raises(cli.CliExit) as caught:
+        cli.Parser().exit(5, "stop\n")
+    assert caught.value.status == 5
+    assert caught.value.message == "stop\n"
+
+
 def test_main_output_file_and_naive(tmp_path: Path) -> None:
     source = tmp_path / "counts.tsv"
     output = tmp_path / "clusters.tsv"
     source.write_text("umi\tcount\nAAAA\t4\nAAAT\t2\n", encoding="utf-8")
     assert main([str(source), "--mode", "adjacency", "--naive", "-o", str(output)]) == 0
     assert output.read_text(encoding="utf-8").splitlines()[1] == "1\tAAAA\t6\tAAAA,AAAT"
+
+
+def test_main_honors_adjacency_mode_and_json_file(tmp_path: Path) -> None:
+    source = tmp_path / "counts.tsv"
+    output = tmp_path / "clusters.json"
+    source.write_text("umi\tcount\nAAAA\t10\nAAAT\t10\nAATT\t1\n", encoding="utf-8")
+    assert main([str(source), "--mode", "adjacency", "--json", "-o", str(output)]) == 0
+    assert json.loads(output.read_text(encoding="utf-8")) == [
+        {
+            "cluster": 1,
+            "representative": "AAAA",
+            "total": 21,
+            "members": ["AAAA", "AAAT", "AATT"],
+        }
+    ]
 
 
 def test_main_reports_output_error(

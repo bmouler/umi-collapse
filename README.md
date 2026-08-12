@@ -1,6 +1,11 @@
 # umi-collapse
 
-[![CI](https://github.com/bmouler/umi-collapse/actions/workflows/ci.yml/badge.svg)](https://github.com/bmouler/umi-collapse/actions/workflows/ci.yml) [![branch coverage](https://img.shields.io/badge/branch%20coverage-100%25-brightgreen)](https://github.com/bmouler/umi-collapse/actions/workflows/ci.yml) [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![CI](https://github.com/bmouler/umi-collapse/actions/workflows/ci.yml/badge.svg)](https://github.com/bmouler/umi-collapse/actions/workflows/ci.yml)
+![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
+![Types](https://img.shields.io/badge/types-mypy%20strict-blue)
+![Mutation](https://img.shields.io/badge/mutation-97%25%20killed-brightgreen)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 Deterministic, dependency-free UMI error correction for tabular DNA counts. It
 provides a transparent all-pairs adjacency baseline, an indexed radius-one
@@ -10,7 +15,7 @@ implementation, and directional clustering using the UMI-tools criterion
 ## Installation
 
 ```console
-python -m pip install .
+python -m pip install umi-collapse
 ```
 
 For development and the benchmark:
@@ -59,6 +64,10 @@ assert clusters[0].total == 18
 
 ## Algorithm
 
+```mermaid
+flowchart LR; I[umi TSV counts] --> V[validate: ACGT, equal length]; V --> N[radius-1 index: masked buckets]; N --> E[candidate edges]; E --> D{mode}; D -->|adjacency| CC[connected components]; D -->|directional| DI[count-ordered collapse]; CC --> O[clusters]; DI --> O
+```
+
 Hamming distance counts substitutions between equal-length UMIs. Adjacency mode
 connects UMIs at distance one and returns connected components. Its indexed
 candidate generator enumerates the three possible substitutions at every
@@ -95,9 +104,33 @@ edge-set equality.
 
 The reader rejects malformed headers or rows, duplicate UMIs (case-insensitive),
 non-ACGT symbols, mixed UMI lengths, and nonpositive or non-integer counts.
-Errors are printed to stderr and the CLI exits with status 2. CI runs Ruff and
-the full suite on Python 3.11 and 3.12, enforcing 100% statement and branch
-coverage over all package modules.
+Errors are printed to stderr and the CLI exits with status 2. CI runs Ruff,
+strict mypy, and the full property-based and deterministic suite on Linux and
+macOS with Python 3.11–3.13, enforcing 100% statement and branch coverage over
+all package modules.
+
+### Mutation testing
+
+The deterministic suite generated 425 mutants and killed 413 (97.18%). The 12
+survivors were individually reviewed and are behavior-equivalent under the
+public contract, not missed mutants. There were zero suspicious results and
+zero timeouts.
+
+| Behavior-equivalent rationale | Count |
+| --- | ---: |
+| One-edit neighbor strict comparison | 1 |
+| Indexed-versus-naive identical edge contract and default routing | 5 |
+| Typing cast identity | 1 |
+| UTF-8 aliases and default encodings | 5 |
+| **Total reviewed equivalents** | **12** |
+
+Reproduce the run from the repository root:
+
+```console
+source .venv/bin/activate
+mutmut run
+mutmut results
+```
 
 ## Limitations
 

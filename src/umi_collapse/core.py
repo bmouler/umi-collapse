@@ -26,7 +26,7 @@ def hamming_distance(left: str, right: str) -> int:
     """Return the number of differing positions in equal-length strings."""
     if len(left) != len(right):
         raise ValueError("Hamming distance requires equal-length strings")
-    return sum(a != b for a, b in zip(left, right, strict=True))
+    return sum(a != b for a, b in zip(left, right, strict=False))
 
 
 def _validate_counts(counts: Mapping[str, int]) -> dict[str, int]:
@@ -104,9 +104,9 @@ def _components(nodes: Iterable[str], edges: Iterable[Edge]) -> list[set[str]]:
         while stack:
             current = stack.pop()
             component.add(current)
-            new = graph[current] & unseen
+            new = unseen.intersection(graph[current])
             unseen.difference_update(new)
-            stack.extend(sorted(new, reverse=True))
+            stack.extend(new)
         components.append(component)
     return components
 
@@ -140,17 +140,14 @@ def _directional(counts: Mapping[str, int]) -> list[Cluster]:
         frontier = [root]
         while frontier:
             current = frontier.pop()
-            absorbable = sorted(
-                (
-                    candidate
-                    for candidate in neighbors[current] & remaining
-                    if counts[current] >= 2 * counts[candidate] - 1
-                ),
-                key=lambda umi: (-counts[umi], umi),
-            )
+            absorbable = [
+                candidate
+                for candidate in remaining.intersection(neighbors[current])
+                if counts[current] >= 2 * counts[candidate] - 1
+            ]
             remaining.difference_update(absorbable)
             members.update(absorbable)
-            frontier.extend(reversed(absorbable))
+            frontier.extend(absorbable)
         clusters.append(_make_cluster(members, counts))
     return clusters
 
