@@ -41,6 +41,17 @@ class _ClusterRecord(TypedDict):
     members: list[str]
 
 
+class _StableHelpFormatter(argparse.HelpFormatter):
+    """Preserve value metavars for every option alias across Python versions."""
+
+    def _format_action_invocation(self, action: argparse.Action) -> str:
+        if not action.option_strings or action.nargs == 0:
+            return super()._format_action_invocation(action)
+        default = self._get_default_metavar_for_optional(action)
+        arguments = self._format_args(action, default)
+        return ", ".join(f"{option} {arguments}" for option in action.option_strings)
+
+
 class Parser(argparse.ArgumentParser):
     """Argument parser that lets ``main`` honor its integer return contract."""
 
@@ -52,7 +63,11 @@ class Parser(argparse.ArgumentParser):
 
 
 def _parser() -> Parser:
-    parser = Parser(prog="umi-collapse", description=__doc__)
+    parser = Parser(
+        prog="umi-collapse",
+        description=__doc__,
+        formatter_class=_StableHelpFormatter,
+    )
     parser.add_argument("input", type=Path, help="TSV with umi and count columns")
     parser.add_argument(
         "-o", "--output", type=Path, help="output path (default: stdout)"
