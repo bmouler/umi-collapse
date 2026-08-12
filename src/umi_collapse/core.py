@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
+from typing import Literal, TypeAlias
 
 DNA = "ACGT"
+
+CollapseMode: TypeAlias = Literal["adjacency", "directional"]
+Edge: TypeAlias = tuple[str, str]
+EdgeSet: TypeAlias = set[Edge]
 
 
 @dataclass(frozen=True)
@@ -47,7 +52,7 @@ def _validate_counts(counts: Mapping[str, int]) -> dict[str, int]:
     return normalized
 
 
-def one_edit_neighbors(umi: str) -> Iterable[str]:
+def one_edit_neighbors(umi: str) -> Iterator[str]:
     """Yield every DNA string at Hamming distance one in stable order."""
     for index, original in enumerate(umi):
         for base in DNA:
@@ -62,7 +67,7 @@ def _ordered_equal_length_umis(umis: Iterable[str]) -> list[str]:
     return ordered
 
 
-def naive_adjacency_edges(umis: Iterable[str]) -> set[tuple[str, str]]:
+def naive_adjacency_edges(umis: Iterable[str]) -> EdgeSet:
     """Generate radius-one edges by all-pairs comparison."""
     ordered = _ordered_equal_length_umis(umis)
     return {
@@ -73,10 +78,10 @@ def naive_adjacency_edges(umis: Iterable[str]) -> set[tuple[str, str]]:
     }
 
 
-def indexed_adjacency_edges(umis: Iterable[str]) -> set[tuple[str, str]]:
+def indexed_adjacency_edges(umis: Iterable[str]) -> EdgeSet:
     """Generate radius-one edges by enumerating substitutions."""
     present = set(_ordered_equal_length_umis(umis))
-    edges: set[tuple[str, str]] = set()
+    edges: EdgeSet = set()
     for umi in sorted(present):
         for neighbor in one_edit_neighbors(umi):
             if neighbor in present and umi < neighbor:
@@ -84,10 +89,8 @@ def indexed_adjacency_edges(umis: Iterable[str]) -> set[tuple[str, str]]:
     return edges
 
 
-def _components(
-    nodes: Iterable[str], edges: Iterable[tuple[str, str]]
-) -> list[set[str]]:
-    graph = {node: set() for node in nodes}
+def _components(nodes: Iterable[str], edges: Iterable[Edge]) -> list[set[str]]:
+    graph: dict[str, set[str]] = {node: set() for node in nodes}
     for left, right in edges:
         graph[left].add(right)
         graph[right].add(left)
@@ -155,7 +158,7 @@ def _directional(counts: Mapping[str, int]) -> list[Cluster]:
 def collapse(
     counts: Mapping[str, int],
     *,
-    mode: str = "directional",
+    mode: CollapseMode = "directional",
     indexed: bool = True,
 ) -> list[Cluster]:
     """Collapse UMI counts using deterministic radius-one clustering.

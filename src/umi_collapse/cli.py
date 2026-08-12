@@ -8,9 +8,9 @@ import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TextIO
+from typing import NoReturn, Protocol, TextIO, TypedDict, cast
 
-from .core import Cluster, collapse
+from .core import Cluster, CollapseMode, collapse
 
 
 class CliExit(Exception):
@@ -26,13 +26,28 @@ class UsageError(Exception):
     """A command-line usage or input error."""
 
 
+class _Arguments(Protocol):
+    input: Path
+    output: Path | None
+    mode: CollapseMode
+    json: bool
+    naive: bool
+
+
+class _ClusterRecord(TypedDict):
+    cluster: int
+    representative: str
+    total: int
+    members: list[str]
+
+
 class Parser(argparse.ArgumentParser):
     """Argument parser that lets ``main`` honor its integer return contract."""
 
-    def error(self, message: str) -> None:
+    def error(self, message: str) -> NoReturn:
         raise UsageError(message)
 
-    def exit(self, status: int = 0, message: str | None = None) -> None:
+    def exit(self, status: int = 0, message: str | None = None) -> NoReturn:
         raise CliExit(status, message)
 
 
@@ -88,14 +103,14 @@ def read_counts(stream: TextIO) -> dict[str, int]:
     return counts
 
 
-def _records(clusters: Sequence[Cluster]) -> list[dict[str, object]]:
+def _records(clusters: Sequence[Cluster]) -> list[_ClusterRecord]:
     return [
-        {
-            "cluster": number,
-            "representative": cluster.representative,
-            "total": cluster.total,
-            "members": list(cluster.members),
-        }
+        _ClusterRecord(
+            cluster=number,
+            representative=cluster.representative,
+            total=cluster.total,
+            members=list(cluster.members),
+        )
         for number, cluster in enumerate(clusters, start=1)
     ]
 
@@ -124,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     """Run the command and return a process status."""
     parser = _parser()
     try:
-        args = parser.parse_args(argv)
+        args = cast(_Arguments, parser.parse_args(argv))
         with args.input.open(encoding="utf-8", newline="") as input_stream:
             counts = read_counts(input_stream)
         clusters = collapse(counts, mode=args.mode, indexed=not args.naive)
