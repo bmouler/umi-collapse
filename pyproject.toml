@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "umi-collapse"
-version = "1.0.0"
+version = "1.0.1"
 description = "Deterministic radius-one UMI error correction for count tables"
 readme = "README.md"
 requires-python = ">=3.11"

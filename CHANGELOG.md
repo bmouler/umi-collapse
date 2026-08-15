@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-08-15
+
 - Added packed two-bit radius-one neighbor generation and compact adjacency traversal for validated DNA UMIs, retaining the general string fallback.
 - Added a deterministic end-to-end adjacency and directional collapse benchmark with exact cluster checksums.
 
