@@ -36,6 +36,13 @@ def test_candidate_generators_match() -> None:
     assert indexed_adjacency_edges(umis) == expected
 
 
+def test_indexed_adjacency_preserves_radius_one_for_non_dna_strings() -> None:
+    umis = {"A!", "AA", "TT"}
+    assert (
+        indexed_adjacency_edges(umis) == naive_adjacency_edges(umis) == {("A!", "AA")}
+    )
+
+
 def test_candidate_generators_reject_mixed_lengths_consistently() -> None:
     for generator in (naive_adjacency_edges, indexed_adjacency_edges):
         with pytest.raises(ValueError, match=r"equal-length"):

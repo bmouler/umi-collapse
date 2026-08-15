@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 DNA = "ACGT"
+_DNA_CODE = {"A": 0, "C": 1, "G": 2, "T": 3}
 
 CollapseMode: TypeAlias = Literal["adjacency", "directional"]
 Edge: TypeAlias = tuple[str, str]
@@ -78,15 +79,48 @@ def naive_adjacency_edges(umis: Iterable[str]) -> EdgeSet:
     }
 
 
+def _encode_umi(umi: str) -> int:
+    encoded = 0
+    for base in umi:
+        encoded = (encoded << 2) | _DNA_CODE[base]
+    return encoded
+
+
+def _indexed_neighbor_indices(ordered: list[str]) -> list[list[int]]:
+    """Build a radius-one adjacency list for validated, ordered DNA UMIs."""
+    codes = [_encode_umi(umi) for umi in ordered]
+    code_to_index = {encoded: index for index, encoded in enumerate(codes)}
+    neighbors: list[list[int]] = [[] for _ in ordered]
+    width = 2 * len(ordered[0]) if ordered else 0
+    for index, encoded in enumerate(codes):
+        for shift in range(0, width, 2):
+            bit = 1 << shift
+            for difference in (bit, bit << 1, bit | (bit << 1)):
+                candidate = code_to_index.get(encoded ^ difference)
+                if candidate is not None and candidate > index:
+                    neighbors[index].append(candidate)
+                    neighbors[candidate].append(index)
+    return neighbors
+
+
 def indexed_adjacency_edges(umis: Iterable[str]) -> EdgeSet:
     """Generate radius-one edges by enumerating substitutions."""
-    present = set(_ordered_equal_length_umis(umis))
-    edges: EdgeSet = set()
-    for umi in sorted(present):
-        for neighbor in one_edit_neighbors(umi):
-            if neighbor in present and umi < neighbor:
-                edges.add((umi, neighbor))
-    return edges
+    ordered = _ordered_equal_length_umis(umis)
+    if any(base not in DNA for umi in ordered for base in umi):
+        present = set(ordered)
+        return {
+            (umi, neighbor)
+            for umi in ordered
+            for neighbor in one_edit_neighbors(umi)
+            if neighbor in present and umi < neighbor
+        }
+    neighbors = _indexed_neighbor_indices(ordered)
+    return {
+        (umi, ordered[candidate])
+        for index, umi in enumerate(ordered)
+        for candidate in neighbors[index]
+        if candidate > index
+    }
 
 
 def _components(nodes: Iterable[str], edges: Iterable[Edge]) -> list[set[str]]:
@@ -95,59 +129,80 @@ def _components(nodes: Iterable[str], edges: Iterable[Edge]) -> list[set[str]]:
         graph[left].add(right)
         graph[right].add(left)
     components: list[set[str]] = []
-    unseen = set(graph)
-    while unseen:
-        start = min(unseen)
+    seen: set[str] = set()
+    for start in sorted(graph):
+        if start in seen:
+            continue
         stack = [start]
         component: set[str] = set()
-        unseen.remove(start)
+        seen.add(start)
         while stack:
             current = stack.pop()
             component.add(current)
-            new = unseen.intersection(graph[current])
-            unseen.difference_update(new)
+            new = graph[current].difference(seen)
+            seen.update(new)
             stack.extend(new)
         components.append(component)
     return components
 
 
-def _make_cluster(members: set[str], counts: Mapping[str, int]) -> Cluster:
+def _make_cluster(members: Iterable[str], counts: Mapping[str, int]) -> Cluster:
     ordered = tuple(sorted(members, key=lambda umi: (-counts[umi], umi)))
     return Cluster(ordered[0], sum(counts[umi] for umi in ordered), ordered)
 
 
 def _adjacency(counts: Mapping[str, int], indexed: bool) -> list[Cluster]:
-    edge_function = indexed_adjacency_edges if indexed else naive_adjacency_edges
-    return [
-        _make_cluster(group, counts)
-        for group in _components(counts, edge_function(counts))
-    ]
+    if not indexed:
+        return [
+            _make_cluster(group, counts)
+            for group in _components(counts, naive_adjacency_edges(counts))
+        ]
+
+    ordered = sorted(counts)
+    neighbors = _indexed_neighbor_indices(ordered)
+    seen = bytearray(len(ordered))
+    clusters: list[Cluster] = []
+    for start in range(len(ordered)):
+        if seen[start]:
+            continue
+        seen[start] = 1
+        members: list[str] = []
+        stack = [start]
+        while stack:
+            current = stack.pop()
+            members.append(ordered[current])
+            for candidate in neighbors[current]:
+                if not seen[candidate]:
+                    seen[candidate] = 1
+                    stack.append(candidate)
+        clusters.append(_make_cluster(members, counts))
+    return clusters
 
 
 def _directional(counts: Mapping[str, int]) -> list[Cluster]:
-    neighbors: dict[str, set[str]] = {umi: set() for umi in counts}
-    for high, low in indexed_adjacency_edges(counts):
-        neighbors[high].add(low)
-        neighbors[low].add(high)
-
-    remaining = set(counts)
+    ordered = sorted(counts)
+    neighbors = _indexed_neighbor_indices(ordered)
+    remaining = bytearray(b"\x01") * len(ordered)
     clusters: list[Cluster] = []
-    for root in sorted(counts, key=lambda umi: (-counts[umi], umi)):
-        if root not in remaining:
+    roots = sorted(range(len(ordered)), key=lambda index: -counts[ordered[index]])
+    for root in roots:
+        if not remaining[root]:
             continue
-        remaining.remove(root)
-        members = {root}
+        remaining[root] = 0
+        members: list[str] = []
         frontier = [root]
         while frontier:
             current = frontier.pop()
-            absorbable = [
-                candidate
-                for candidate in remaining.intersection(neighbors[current])
-                if counts[current] >= 2 * counts[candidate] - 1
-            ]
-            remaining.difference_update(absorbable)
-            members.update(absorbable)
-            frontier.extend(absorbable)
+            current_umi = ordered[current]
+            members.append(current_umi)
+            for candidate in neighbors[current]:
+                candidate_umi = ordered[candidate]
+                if (
+                    remaining[candidate]
+                    and counts[current_umi] >= 2 * counts[candidate_umi] - 1
+                ):
+                    remaining[candidate] = 0
+                    frontier.append(candidate)
         clusters.append(_make_cluster(members, counts))
     return clusters
 

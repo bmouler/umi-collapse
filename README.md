@@ -65,7 +65,7 @@ assert clusters[0].total == 18
 ## Algorithm
 
 ```mermaid
-flowchart LR; I[umi TSV counts] --> V[validate: ACGT, equal length]; V --> N[radius-1 index: masked buckets]; N --> E[candidate edges]; E --> D{mode}; D -->|adjacency| CC[connected components]; D -->|directional| DI[count-ordered collapse]; CC --> O[clusters]; DI --> O
+flowchart LR; I[umi TSV counts] --> V[validate: ACGT, equal length]; V --> N[packed 2-bit radius-1 substitutions]; N --> E[candidate edges]; E --> D{mode}; D -->|adjacency| CC[connected components]; D -->|directional| DI[count-ordered collapse]; CC --> O[clusters]; DI --> O
 ```
 
 Hamming distance counts substitutions between equal-length UMIs. Adjacency mode
@@ -83,22 +83,23 @@ explicit stable ordering, so repeated runs are byte-for-byte reproducible.
 
 ## Reproducible capability evidence
 
-`benchmarks/benchmark_candidates.py` creates a seeded set of 12-base parent UMIs and
-one-substitution errors until the requested total UMI count is reached, computes the complete
-edge sets using both indexed and all-pairs generation, fails if those sets differ, and reports
-median timings:
+`benchmarks/benchmark_candidates.py` builds a deterministic 4,800-UMI count table, then times
+both public `collapse` modes through validation, radius-one edge generation, clustering, stable
+ordering, and full result materialization:
 
 ```console
-python benchmarks/benchmark_candidates.py --seed 2026 --umis 1000 --length 12
+PYTHONPATH=src python benchmarks/benchmark_candidates.py --seed 2026 --umis 4800 \
+  --length 12 --warmups 3 --samples 11 \
+  --expected-checksum f798b9f2e8afe79ffe2b5de9e8add8d3736ab24c9d6a84ab8c43b750d1c81c71
 ```
 
-The output includes `identical_edges`, both elapsed times, and their measured
-speedup. This is material algorithmic improvement: candidate work changes from
-$O(N^2 L)$ Hamming comparisons to $O(NL)$ expected hash lookups for fixed DNA
-alphabet size. Timings are intentionally generated locally rather than quoted
-as a universal number because they depend on hardware and interpreter state.
-The test suite also exercises a smaller seeded benchmark and requires exact
-edge-set equality.
+On an Apple M3 Max with CPython 3.11.12 on 2026-08-15, frozen baseline
+`f5964fe08a6e` measured **137.250 ms** median and the packed implementation
+**41.849 ms**, a **3.280x speedup** over 11 samples after three warmups. Both runs produced
+the checksum above, 1,178 adjacency clusters, and 1,198 directional clusters. Fixture generation
+and interpreter startup are excluded; all public collapse work is included. The module also
+retains the smaller indexed-versus-naive edge benchmark as an executable correctness oracle.
+These are local in-process timings; rerun with `PYTHONPATH` pointed at the desired worktree.
 
 ## Validation and failure behavior
 
